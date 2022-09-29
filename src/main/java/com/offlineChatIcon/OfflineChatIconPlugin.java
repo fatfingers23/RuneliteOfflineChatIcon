@@ -29,12 +29,7 @@ public class OfflineChatIconPlugin extends Plugin
 	@Inject
 	private Client client;
 
-	@Inject
-	private OfflineChatIconConfig config;
-
-	private int joinedTick;
 	private int offlineIconLocation = -1;
-
 	private String iconImg;
 	@Inject
 	private ClientThread clientThread;
@@ -42,7 +37,6 @@ public class OfflineChatIconPlugin extends Plugin
 	@Override
 	protected void startUp() throws Exception
 	{
-		log.info("Example started!");
 		clientThread.invoke(() ->
 		{
 			if (client.getModIcons() == null)
@@ -53,13 +47,6 @@ public class OfflineChatIconPlugin extends Plugin
 			return true;
 		});
 	}
-
-	@Override
-	protected void shutDown() throws Exception
-	{
-		log.info("Example stopped!");
-	}
-
 
 	@Subscribe
 	public void onClanMemberJoined(ClanMemberJoined clanMemberJoined)
@@ -121,9 +108,4 @@ public class OfflineChatIconPlugin extends Plugin
 		}
 	}
 
-	@Provides
-	OfflineChatIconConfig provideConfig(ConfigManager configManager)
-	{
-		return configManager.getConfig(OfflineChatIconConfig.class);
-	}
 }
