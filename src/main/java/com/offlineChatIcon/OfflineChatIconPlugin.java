@@ -60,26 +60,6 @@ public class OfflineChatIconPlugin extends Plugin
 		log.info("Example stopped!");
 	}
 
-	@Subscribe
-	public void onFriendsChatMemberJoined(FriendsChatMemberJoined event)
-	{
-		final FriendsChatMember member = event.getMember();
-
-		// members getting initialized isn't relevant
-		if (joinedTick == client.getTickCount())
-		{
-			return;
-		}
-		rebuildChat(member.getName(), false);
-	}
-
-	@Subscribe
-	public void onFriendsChatMemberLeft(FriendsChatMemberLeft event)
-	{
-		final FriendsChatMember member = event.getMember();
-		rebuildChat(member.getName(), false);
-
-	}
 
 	@Subscribe
 	public void onClanMemberJoined(ClanMemberJoined clanMemberJoined)
@@ -107,8 +87,7 @@ public class OfflineChatIconPlugin extends Plugin
 
 		BufferedImage image = ImageUtil.loadImageResource(getClass(), "/logout_icon.png");
 		IndexedSprite indexedSprite = ImageUtil.getImageIndexedSprite(image, client);
-		indexedSprite.setHeight(13);
-		indexedSprite.setWidth(13);
+
 		offlineIconLocation = modIcons.length;
 
 		final IndexedSprite[] newModIcons = Arrays.copyOf(modIcons, modIcons.length + 1);
@@ -126,9 +105,7 @@ public class OfflineChatIconPlugin extends Plugin
 			String cleanRsnFromMessage = Text.removeTags(message.getName());
 			ChatMessageType messageType = message.getType();
 			if(cleanRsnFromMessage.equals(rsn)){
-				if(messageType == ChatMessageType.CLAN_CHAT
-						|| messageType == ChatMessageType.CLAN_GUEST_MESSAGE
-						|| messageType == ChatMessageType.CHALREQ_FRIENDSCHAT) {
+				if(messageType == ChatMessageType.CLAN_CHAT || messageType == ChatMessageType.CLAN_GUEST_CHAT) {
 					if(addIcon){
 						message.setName(iconImg + message.getName());
 					}else {
