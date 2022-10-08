@@ -89,9 +89,11 @@ public class OfflineChatIconPlugin extends Plugin
 		boolean needRefreshing = false;
 		IterableHashTable<MessageNode> messages = client.getMessages();
 		for (MessageNode message: messages) {
-			String cleanRsnFromMessage = Text.removeTags(message.getName());
+			//I really only think i need to run standardized on the message.getName(), but want to make sure
+			String cleanRsnFromMessage = Text.standardize(Text.removeTags(message.getName()));
+			String standardizedRsnFromEvent = Text.standardize(rsn);
 			ChatMessageType messageType = message.getType();
-			if(cleanRsnFromMessage.equals(rsn)){
+			if(cleanRsnFromMessage.equals(standardizedRsnFromEvent)){
 				if(messageType == ChatMessageType.CLAN_CHAT || messageType == ChatMessageType.CLAN_GUEST_CHAT) {
 					if(addIcon){
 						message.setName(iconImg + message.getName());
