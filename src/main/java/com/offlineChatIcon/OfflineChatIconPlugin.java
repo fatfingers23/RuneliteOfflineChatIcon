@@ -1,28 +1,30 @@
 package com.offlineChatIcon;
 
 import com.google.inject.Provides;
-import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.clan.ClanChannel;
 import net.runelite.api.clan.ClanChannelMember;
-import net.runelite.api.events.*;
+import net.runelite.api.clan.ClanID;
+import net.runelite.api.events.ClanMemberJoined;
+import net.runelite.api.events.ClanMemberLeft;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import net.runelite.client.plugins.account.AccountPlugin;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.Text;
 
+import javax.inject.Inject;
+import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
-import java.util.Objects;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Offline Chat Icon"
+		name = "Offline Chat Icon"
 )
 public class OfflineChatIconPlugin extends Plugin
 {
@@ -34,6 +36,18 @@ public class OfflineChatIconPlugin extends Plugin
 	@Inject
 	private ClientThread clientThread;
 
+	@Inject
+	private OfflineChatIconConfig config;
+
+	@Inject
+	private ConfigManager configManager;
+
+	@Provides
+	OfflineChatIconConfig getConfig(ConfigManager configManager)
+	{
+		return configManager.getConfig(OfflineChatIconConfig.class);
+	}
+	//	Format on startup
 	@Override
 	protected void startUp() throws Exception
 	{
@@ -44,22 +58,76 @@ public class OfflineChatIconPlugin extends Plugin
 				return false;
 			}
 			loadIcon();
+			formatAllMessages();
+			return true;
+		});
+	}
+	// Remove formatting on shutdown
+	@Override
+	protected void shutDown() throws Exception
+	{
+		clientThread.invoke(() ->
+		{
+			IterableHashTable<MessageNode> messages = client.getMessages();
+			if (messages == null)
+			{
+				return false;
+			}
+
+			boolean updated = false;
+			for (MessageNode message : messages)
+			{
+				updated |= removeFormatting(message);
+			}
+
+			if (updated)
+			{
+				client.refreshChat();
+			}
 			return true;
 		});
 	}
 
 	@Subscribe
+	public void onConfigChanged(ConfigChanged configChanged)
+	{
+		if (!configChanged.getGroup().equals("offlineChatIcon"))
+		{
+			return;
+		}
+		formatAllMessages();
+	}
+	//	Check if rsn is in online clan member list
+	private boolean isClanMemberOnline(String rsn)
+	{
+		ClanChannel clanChannel = client.getClanChannel(ClanID.CLAN);
+		if (clanChannel == null)
+		{
+			return false;
+		}
+
+		String standardizedPlayerName = Text.standardize(rsn);
+
+		for (ClanChannelMember member : clanChannel.getMembers())
+		{
+			if (Text.standardize(member.getName()).equals(standardizedPlayerName))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Subscribe
 	public void onClanMemberJoined(ClanMemberJoined clanMemberJoined)
 	{
-		final ClanChannelMember member = clanMemberJoined.getClanMember();
-		rebuildChat(member.getName(), false);
+		clientThread.invokeLater(() -> rebuildChat(clanMemberJoined.getClanMember().getName()));
 	}
 
 	@Subscribe
 	public void onClanMemberLeft(ClanMemberLeft clanMemberLeft)
 	{
-		final ClanChannelMember member = clanMemberLeft.getClanMember();
-		rebuildChat(member.getName(), true);
+		clientThread.invokeLater(() -> rebuildChat(clanMemberLeft.getClanMember().getName()));
 	}
 
 	private void loadIcon()
@@ -85,29 +153,108 @@ public class OfflineChatIconPlugin extends Plugin
 		iconImg = "<img=" + offlineIconLocation + ">";
 	}
 
-	private void rebuildChat(String rsn, Boolean addIcon){
-		boolean needRefreshing = false;
-		IterableHashTable<MessageNode> messages = client.getMessages();
-		for (MessageNode message: messages) {
-			//I really only think i need to run standardized on the message.getName(), but want to make sure
-			String cleanRsnFromMessage = Text.standardize(Text.removeTags(message.getName()));
-			String standardizedRsnFromEvent = Text.standardize(rsn);
-			ChatMessageType messageType = message.getType();
-			if(cleanRsnFromMessage.equals(standardizedRsnFromEvent)){
-				if(messageType == ChatMessageType.CLAN_CHAT || messageType == ChatMessageType.CLAN_GUEST_CHAT) {
-					if(addIcon){
-						message.setName(iconImg + message.getName());
-					}else {
-						message.setName(message.getName().replace(iconImg, ""));
-					}
+	private String stripName(String name)
+	{
+		return name
+				.replace(iconImg, "")
+				.replaceAll("<col=[0-9a-fA-F]{6}>", "")
+				.replace("</col>", "");
+	}
 
-					needRefreshing = true;
-				}
+	private boolean removeFormatting(MessageNode message)
+	{
+		ChatMessageType type = message.getType();
+		if (type != ChatMessageType.CLAN_CHAT && type != ChatMessageType.CLAN_GUEST_CHAT)
+		{
+			return false;
+		}
+
+		// Strip name
+		String original = message.getName();
+		String cleaned = stripName(original);
+
+		if (!original.equals(cleaned))
+		{
+			message.setName(cleaned);
+			return true;
+		}
+		return false;
+	}
+
+	private boolean applyFormatting(MessageNode message)
+	{
+		ChatMessageType type = message.getType();
+		if (type != ChatMessageType.CLAN_CHAT && type != ChatMessageType.CLAN_GUEST_CHAT)
+		{
+			return false;
+		}
+		// Strip name
+		String original = message.getName();
+		String cleaned = stripName(original);
+		String standardized = Text.standardize(Text.removeTags(cleaned));
+
+		if (!isClanMemberOnline(standardized))
+		{
+			if (config.enableOfflineColor())
+			{
+				cleaned = getColorTag() + cleaned + "</col>";
+			}
+			if (config.enableOfflineIcon())
+			{
+				cleaned = iconImg + cleaned;
 			}
 		}
-		if(needRefreshing){
+		message.setName(cleaned);
+		return true;
+	}
+
+	private void formatAllMessages()
+	{
+		IterableHashTable<MessageNode> messages = client.getMessages();
+		if (messages == null)
+		{
+			return;
+		}
+
+		boolean updated = false;
+		for (MessageNode message : messages)
+		{
+			updated |= applyFormatting(message);
+		}
+
+		if (updated)
+		{
 			client.refreshChat();
 		}
 	}
 
+	private void rebuildChat(String rsn)
+	{
+		boolean needRefreshing = false;
+		IterableHashTable<MessageNode> messages = client.getMessages();
+		String standardizedRsnFromEvent = Text.standardize(rsn);
+
+		if (messages == null)
+		{
+			return;
+		}
+		for (MessageNode message : messages)
+		{
+			String cleanRsnFromMessage = Text.standardize(Text.removeTags(message.getName()));
+			if (cleanRsnFromMessage.equals(standardizedRsnFromEvent))
+			{
+				needRefreshing |= applyFormatting(message);
+			}
+		}
+		if (needRefreshing)
+		{
+			client.refreshChat();
+		}
+	}
+	//	Get color from config
+	private String getColorTag()
+	{
+		Color color = config.offlineColor();
+		return String.format("<col=%02x%02x%02x>", color.getRed(), color.getGreen(), color.getBlue());
+	}
 }
